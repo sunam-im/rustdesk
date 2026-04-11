@@ -1,11 +1,11 @@
 [package]
-name = "rustdesk"
+name = "xyremote"
 version = "1.4.6"
 authors = ["rustdesk <info@rustdesk.com>"]
 edition = "2021"
 build= "build.rs"
 description = "RustDesk Remote Desktop"
-default-run = "rustdesk"
+default-run = "xyremote"
 rust-version = "1.75"
 
 [lib]
@@ -215,7 +215,7 @@ libxdo-sys = { path = "libs/libxdo-sys-stub" }
 [package.metadata.winres]
 LegalCopyright = "Copyright © 2025 Purslane Ltd. All rights reserved."
 ProductName = "RustDesk"
-FileDescription = "RustDesk Remote Desktop"
+FileDescription = "XYRemote Remote Desktop"
 OriginalFilename = "rustdesk.exe"
 
 [target.'cfg(target_os="windows")'.build-dependencies]
@@ -233,7 +233,7 @@ docopt = "1.1"
 
 [package.metadata.bundle]
 name = "RustDesk"
-identifier = "com.carriez.rustdesk"
+identifier = "com.xynet.xyremote"
 icon = ["res/32x32.png", "res/128x128.png", "res/128x128@2x.png"]
 osx_minimum_system_version = "10.14"
 
