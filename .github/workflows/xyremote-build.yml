@@ -21,10 +21,12 @@ jobs:
       - name: Setup vcpkg and install deps
         shell: bash
         run: |
-          cd /c
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg
-          ./bootstrap-vcpkg.sh
+          if [ -d "/c/vcpkg" ]; then
+            cd /c/vcpkg && git pull
+          else
+            git clone https://github.com/microsoft/vcpkg.git /c/vcpkg
+          fi
+          cd /c/vcpkg && ./bootstrap-vcpkg.sh
           ./vcpkg install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
           echo "VCPKG_ROOT=/c/vcpkg" >> $GITHUB_ENV
 
