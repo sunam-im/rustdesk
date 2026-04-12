@@ -18,14 +18,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup vcpkg
+      - name: Setup vcpkg and install deps
+        shell: bash
         run: |
-          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-          C:\vcpkg\bootstrap-vcpkg.bat
-          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-
-      - name: Install vcpkg deps
-        run: C:\vcpkg\vcpkg install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+          cd /c
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          ./bootstrap-vcpkg.sh
+          ./vcpkg install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+          echo "VCPKG_ROOT=/c/vcpkg" >> $GITHUB_ENV
 
       - uses: subosito/flutter-action@v2
         with:
@@ -35,15 +36,15 @@ jobs:
         run: cargo install flutter_rust_bridge_codegen --version 1.80.1 --locked
 
       - name: Generate bridge
+        shell: bash
         run: |
           cd flutter
           flutter pub get
           flutter_rust_bridge_codegen --rust-input ../src/flutter_ffi.rs --dart-output lib/generated_bridge.dart --c-output windows/bridge_generated.h
 
       - name: Build Rust
-        run: cargo build --release --features flutter
-        env:
-          VCPKG_ROOT: C:\vcpkg
+        shell: bash
+        run: VCPKG_ROOT=/c/vcpkg cargo build --release --features flutter
 
       - name: Build Flutter Windows
         working-directory: flutter
@@ -69,14 +70,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup vcpkg
+      - name: Setup vcpkg and install deps
         run: |
           git clone https://github.com/microsoft/vcpkg.git $HOME/vcpkg
           $HOME/vcpkg/bootstrap-vcpkg.sh
+          $HOME/vcpkg/vcpkg install libvpx libyuv opus aom
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
-
-      - name: Install vcpkg deps
-        run: $HOME/vcpkg/vcpkg install libvpx libyuv opus aom
 
       - uses: subosito/flutter-action@v2
         with:
