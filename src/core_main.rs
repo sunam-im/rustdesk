@@ -46,6 +46,8 @@ pub fn core_main() -> Option<Vec<String>> {
     let mut _is_quick_support = false;
     let mut _is_flutter_invoke_new_connection = false;
     let mut no_server = false;
+    let mut _support_capture = false;
+    let mut support_code: Option<String> = None;
     let mut arg_exe = Default::default();
     for arg in std::env::args() {
         if i == 0 {
@@ -73,11 +75,21 @@ pub fn core_main() -> Option<Vec<String>> {
                 _is_quick_support = true;
             } else if arg == "--no-server" {
                 no_server = true;
+            } else if arg == "--support-code" {
+                _support_capture = true;
+            } else if _support_capture {
+                support_code = Some(arg);
+                _support_capture = false;
             } else {
                 args.push(arg);
             }
         }
         i += 1;
+    }
+    if let Some(code) = support_code.take() {
+        if !code.is_empty() {
+            crate::xyremote_report::apply_support_code(code);
+        }
     }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     if args.is_empty() {

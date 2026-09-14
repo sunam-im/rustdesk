@@ -67,3 +67,35 @@ pub fn report_session(
         }
     });
 }
+
+
+pub fn apply_support_code(code: String) {
+    use hbb_common::config::Config;
+    // Set the incoming-connection password to the agent-provided support code and
+    // require it (permanent-password auth). Written to config before the --server
+    // subprocess starts, so it is picked up on launch.
+    Config::set_permanent_password(&code);
+    Config::set_option("verification-method".to_owned(), "use-permanent-password".to_owned());
+    // Report our id against the code so the support portal can pair the agent.
+    report_support(code, Config::get_id());
+}
+
+fn report_support(code: String, peer_id: String) {
+    let key = match option_env!("XYREMOTE_INGEST_KEY") {
+        Some(k) if !k.is_empty() => k.to_string(),
+        _ => return,
+    };
+    std::thread::spawn(move || {
+        let body = serde_json::json!({ "code": code, "peer_id": peer_id });
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            let _ = client
+                .post("https://xyremote.com/api/v1/support/register")
+                .header("X-XYRemote-Key", key)
+                .json(&body)
+                .send();
+        }
+    });
+}
