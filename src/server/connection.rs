@@ -233,6 +233,7 @@ pub struct Connection {
     port_forward_address: String,
     tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
     authorized: bool,
+    session_start: Option<(std::time::SystemTime, String)>,
     require_2fa: Option<totp_rs::TOTP>,
     keyboard: bool,
     clipboard: bool,
@@ -423,6 +424,7 @@ impl Connection {
             port_forward_address: "".to_owned(),
             tx_to_cm,
             authorized: false,
+            session_start: None,
             keyboard: Self::permission(keys::OPTION_ENABLE_KEYBOARD, &control_permissions),
             clipboard: Self::permission(keys::OPTION_ENABLE_CLIPBOARD, &control_permissions),
             audio: Self::permission(keys::OPTION_ENABLE_AUDIO, &control_permissions),
@@ -1476,6 +1478,10 @@ impl Connection {
         self.post_conn_audit(
             json!({"peer": ((&self.lr.my_id, &self.lr.my_name)), "type": conn_type}),
         );
+        self.session_start = Some((
+            std::time::SystemTime::now(),
+            crate::xyremote_report::conn_type_label(conn_type).to_string(),
+        ));
         #[allow(unused_mut)]
         let mut username = crate::platform::get_active_username();
         let mut res = LoginResponse::new();
@@ -4265,6 +4271,15 @@ impl Connection {
             return;
         }
         self.closed = true;
+        if let Some((start, ctype)) = self.session_start.take() {
+            crate::xyremote_report::report_session(
+                self.lr.my_id.clone(),
+                Config::get_id(),
+                ctype,
+                start,
+                std::time::SystemTime::now(),
+            );
+        }
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //

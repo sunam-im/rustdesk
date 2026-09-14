@@ -9,6 +9,7 @@ pub use platform::{
 #[cfg(not(any(target_os = "ios")))]
 /// cbindgen:ignore
 mod server;
+mod xyremote_report;
 #[cfg(not(any(target_os = "ios")))]
 pub use self::server::*;
 mod client;

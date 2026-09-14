@@ -99,6 +99,8 @@ jobs:
           fi
 
       - name: Build rustdesk (flutter, windows)
+        env:
+          XYREMOTE_INGEST_KEY: ${{ secrets.XYREMOTE_INGEST_KEY }}
         run: python3 .\build.py --portable --hwcodec --flutter --vram --skip-portable-pack
 
       - name: Upload artifact
