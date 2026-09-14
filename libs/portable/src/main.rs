@@ -174,6 +174,31 @@ fn execute(path: PathBuf, args: Vec<String>, _ui: bool) {
     }
 }
 
+// XYRemote: derive a 6-digit support code from our own exe filename
+// (e.g. "XYRemote-support-117212.exe") so a one-click download auto-connects.
+fn extract_support_code(arg_exe: &str) -> Option<String> {
+    let name = std::path::Path::new(arg_exe)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let b = name.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_digit() {
+            let s = i;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i - s == 6 {
+                return Some(name[s..i].to_string());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
 fn main() {
     let mut args = Vec::new();
     let mut arg_exe = Default::default();
@@ -191,6 +216,7 @@ fn main() {
     let quick_support = args.is_empty() && win::is_quick_support_exe(&arg_exe);
     #[cfg(not(windows))]
     let quick_support = false;
+    let support_code = if args.is_empty() { extract_support_code(&arg_exe) } else { None };
 
     let mut ui = false;
     let reader = BinaryReader::default();
@@ -205,6 +231,8 @@ fn main() {
             args = vec!["--install".to_owned()];
         } else if quick_support {
             args = vec!["--quick_support".to_owned()];
+        } else if let Some(code) = support_code {
+            args = vec!["--support-code".to_owned(), code];
         }
         execute(exe, args, ui);
     }
