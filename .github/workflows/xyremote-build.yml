@@ -11,7 +11,11 @@ on:
 env:
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
+  ANDROID_FLUTTER_VERSION: "3.24.5"
   RUST_VERSION: "1.75"
+  CARGO_NDK_VERSION: "3.1.2"
+  NDK_VERSION: "r28c"
+  VERSION: "1.4.6"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
@@ -34,6 +38,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Apply XYRemote server settings
+        shell: bash
+        run: python3 .github/xyremote/apply_server_settings.py
 
       - name: Restore bridge files
         uses: actions/download-artifact@master
@@ -103,6 +111,14 @@ jobs:
           XYREMOTE_INGEST_KEY: ${{ secrets.XYREMOTE_INGEST_KEY }}
         run: python3 .\build.py --portable --hwcodec --flutter --vram
 
+      - name: Verify XYRemote server is built in
+        shell: bash
+        run: |
+          DLL=flutter/build/windows/x64/runner/Release/librustdesk.dll
+          grep -aq "14.51.2.222" "$DLL" || { echo "our server address missing in $DLL"; exit 1; }
+          grep -aq "aVwXc5GC7rwTX3uqSrpw0LHbpyo5zjUE6Na8Asuj7zs=" "$DLL" || { echo "our server key missing in $DLL"; exit 1; }
+          echo "server address and key found in $DLL"
+
       - name: Upload artifact (folder)
         uses: actions/upload-artifact@v4
         with:
@@ -115,3 +131,191 @@ jobs:
           name: XYRemote-Portable
           path: rustdesk-*-install.exe
           if-no-files-found: warn
+
+  # Mirrors the official RustDesk Android build (NDK r28c, cargo-ndk, vcpkg
+  # android deps, flutter split-per-abi), signed with the XYRemote release key.
+  build-android:
+    needs: [generate-bridge]
+    name: build android apk ${{ matrix.job.arch }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { arch: aarch64, target: aarch64-linux-android, abi: arm64-v8a, platform: android-arm64, ndk_script: ndk_arm64.sh, libcxx: aarch64-linux-android }
+          - { arch: armv7, target: armv7-linux-androideabi, abi: armeabi-v7a, platform: android-arm, ndk_script: ndk_arm.sh, libcxx: arm-linux-androideabi }
+    env:
+      ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+               clang \
+               cmake \
+               curl \
+               gcc-multilib \
+               git \
+               g++ \
+               g++-multilib \
+               libayatana-appindicator3-dev \
+               libasound2-dev \
+               libc6-dev \
+               libclang-dev \
+               libunwind-dev \
+               libgstreamer1.0-dev \
+               libgstreamer-plugins-base1.0-dev \
+               libgtk-3-dev \
+               libpam0g-dev \
+               libpulse-dev \
+               libva-dev \
+               libxcb-randr0-dev \
+               libxcb-shape0-dev \
+               libxcb-xfixes0-dev \
+               libxdo-dev \
+               libxfixes-dev \
+               llvm-dev \
+               nasm \
+               ninja-build \
+               openjdk-17-jdk-headless \
+               pkg-config \
+               tree \
+               wget
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Apply XYRemote server settings and app name
+        run: python3 .github/xyremote/apply_server_settings.py --app-name
+
+      - name: Install flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.ANDROID_FLUTTER_VERSION }}
+
+      - name: Patch flutter
+        run: |
+          cd $(dirname $(dirname $(which flutter)))
+          git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: /opt/artifacts/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        run: |
+          if ! ./flutter/build_android_deps.sh "${{ matrix.job.abi }}"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r f; do echo "$f:"; echo "======"; cat "$f"; echo "======"; done
+            exit 1
+          fi
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@master
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rustdesk-lib-cache-android
+          key: ${{ matrix.job.target }}
+
+      - name: Build rustdesk lib
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          XYREMOTE_INGEST_KEY: ${{ secrets.XYREMOTE_INGEST_KEY }}
+        run: |
+          rustup target add ${{ matrix.job.target }}
+          cargo install cargo-ndk --version ${{ env.CARGO_NDK_VERSION }} --locked
+          ./flutter/${{ matrix.job.ndk_script }}
+
+      - name: Verify XYRemote server is built in
+        run: |
+          LIB=./target/${{ matrix.job.target }}/release/liblibrustdesk.so
+          grep -aq "14.51.2.222" "$LIB" || { echo "our server address missing in $LIB"; exit 1; }
+          grep -aq "aVwXc5GC7rwTX3uqSrpw0LHbpyo5zjUE6Na8Asuj7zs=" "$LIB" || { echo "our server key missing in $LIB"; exit 1; }
+          echo "server address and key found in $LIB"
+
+      - name: Build apk
+        shell: bash
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          export PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH
+          sed -i "s/org.gradle.jvmargs=-Xmx1024M/org.gradle.jvmargs=-Xmx2g/g" ./flutter/android/gradle.properties
+          # build with the debug config; the release key is applied in the signing step below
+          sed -i "s/signingConfigs.release/signingConfigs.debug/g" ./flutter/android/app/build.gradle
+          JNI=./flutter/android/app/src/main/jniLibs/${{ matrix.job.abi }}
+          mkdir -p "$JNI"
+          cp ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.job.libcxx }}/libc++_shared.so "$JNI/"
+          cp ./target/${{ matrix.job.target }}/release/liblibrustdesk.so "$JNI/librustdesk.so"
+          pushd flutter
+          flutter build apk --release --target-platform ${{ matrix.job.platform }} --split-per-abi
+          popd
+          mkdir -p signed-apk
+          mv flutter/build/app/outputs/flutter-apk/app-${{ matrix.job.abi }}-release.apk signed-apk/xyremote-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
+
+      - name: Setup sign tool version variable
+        shell: bash
+        run: |
+          BUILD_TOOL_VERSION=$(ls /usr/local/lib/android/sdk/build-tools/ | tail -n 1)
+          echo "ANDROID_SIGN_TOOL_VERSION=$BUILD_TOOL_VERSION" >> $GITHUB_ENV
+
+      - uses: r0adkll/sign-android-release@v1
+        name: Sign app APK
+        if: env.ANDROID_SIGNING_KEY != null
+        id: sign-xyremote
+        with:
+          releaseDirectory: ./signed-apk
+          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
+          alias: ${{ secrets.ANDROID_ALIAS }}
+          keyStorePassword: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: ${{ env.ANDROID_SIGN_TOOL_VERSION }}
+
+      - name: Upload signed apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: XYRemote-Android-${{ matrix.job.arch }}
+          path: ${{ steps.sign-xyremote.outputs.signedReleaseFile }}
+          if-no-files-found: error
