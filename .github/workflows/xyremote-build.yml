@@ -128,7 +128,12 @@ jobs:
         shell: bash
         run: |
           cd res/msi
-          python3 preprocess.py --arp -d ../../flutter/build/windows/x64/runner/Release             --app-name XYRemote -m "Smart SN Co., Ltd."             --custom-arp {Contact: {msi: ARPCONTACT, v: https://xyremote.com}, HelpLink: {msi: ARPHELPLINK, v: https://xyremote.com}, ReadMe: {msi: ARPREADME, v: https://xyremote.com}}
+          # point the Add/Remove Programs links at us (a JSON --custom-arp gets
+          # its quotes stripped on the way to Windows python)
+          sed -i -E 's#https://github.com/rustdesk/rustdesk(/issues/)?#https://xyremote.com#' preprocess.py
+          grep -q "https://xyremote.com" preprocess.py
+          python3 preprocess.py --arp -d ../../flutter/build/windows/x64/runner/Release \
+            --app-name XYRemote -m "Smart SN Co., Ltd."
 
       - name: Build msi
         run: |
