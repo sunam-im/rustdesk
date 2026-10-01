@@ -1082,7 +1082,8 @@ fn get_api_server_(api: String, custom: String) -> String {
             return format!("http://{}", s);
         }
     }
-    "https://admin.rustdesk.com".to_owned()
+    // XYRemote: our server takes the heartbeat/sysinfo (device online status).
+    "https://xyremote.com".to_owned()
 }
 
 #[inline]
